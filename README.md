@@ -1,40 +1,56 @@
-# Overflow
+# Checked Math
 
-A convenience macro for changing the overflow properties of math expressions without having to change those expressions (mostly).
+A convenience macro for changing the checking properties of math expressions without having to change those expressions (mostly).
 
 ## Some Background
 
-By default Rust's math expressions (e.g., 2 * 9) panic on overflow in debug builds and overflow silently in release builds. While this is a fine default, you may want different behaivor. For instance, integer overflow may be expected behaivor. In that case you'll want to reach for the various overflow APIs available for Rust numbers (e.g., [`wrapping_mul`](https://doc.rust-lang.org/std/primitive.u32.html#method.wrapping_mul)). The issue with this however, is that you can no longer use normal math notation, instead needing to use cumbersome methods like `a.wrapping_add(b)` instead of `a + b`.
+By default Rust's math expressions (e.g., 2 * 9) panic on overflow in debug builds and overflow silently in release builds. While this is a fine default, you may want different behaivor. For instance, you may want to panic on overflow even in release builds. In that case you'll want to reach for the various APIs available for Rust numbers (e.g., [`checked_mul`](https://doc.rust-lang.org/std/primitive.u32.html#method.checked_mul)). The issue with this however, is that you can no longer use normal math notation, instead needing to use cumbersome methods like `a.checked_add(b).unwrap()` instead of `a + b`.
 
-Overflow lets you keep using normal math notation but still change the way that overflows are handled.
+Checked Math lets you keep using normal math notation by performing the rewrite in a proc macro.
 
 ## Example
 
-By default the following will fail in debug builds at runtime:
+By default the following may silently overflow in release builds at runtime:
 
 ```rust
-(2u8.pow(20) << 20) + 2 * 2;
+(x * y) + z
 ```
 
-In order to make this wrap in debug and release builds you would need to write it this way:
+In order to to panic on error instead, people often rewrite to:
 
 ```rust
-(2u8.wrapping_pow(20).wrapping_shl(20)).wrapping_add(2u8.wrapping_mul(2))
+x.checked_mul(y).unwrap().checked_add(z).unwrap()
 ```
 
-Or you could use Overflow and write the following:
+Or you could use Checked Math and write the following:
 
 ```rust
-overflow::wrapping! { (2u8.pow(20) << 20) + 2u8 * 2 }
+use checked_math::checked_math as cm;
+cm!((x * y) + z).unwrap()
 ```
 
-The above converts the normal meth expression syntax directly into the `wrapping` variant from above.
+The macro call converts the normal math expression into an expression returning `None` if any of the checked math steps return `None`, and `Some(_)` on success.
+
+Projects may want to wrap the rewriting macro to automatically include their error
+reporting, for example:
+```rust
+#[macro_export]
+macro_rules! my_checked_math {
+    ($x: expr) => {
+        checked_math::checked_math!($x).unwrap_or_else(|| panic!("math error"))
+    };
+}
+```
 
 ## Limitations
 
-Overflow is currently limited in the following:
+Checked Math is currently limited in the following:
 
-* The crate currently requires nightly because proc macros in expressions are not currently stable.
 * Because math operations can more easily propogate type inference information than method calls, you may have to add type information when using the macros that were not neceesary before.
-* Overflow behaivor is only affected at the top level (or within parenthesis) meaning that if you have math expressions inside of method invocations or inside of other macros, those expressions will not be converted.
-* Conversion of `pow` is extremely naive so if you call a `pow` method on some type, this will be converted to `wrapping_pow` even if that makes no sense for that type.
+* The syntax the macro accepts is intentionally limited to binary expressions, parentheses, argument-less calls and some extras. The background is that it would be confusing if inner expressions like in `checked_math!(foo(a + b))` or `checked_math!(if a + b { b + c } else { d })` were silently not transformed.
+* Conversion of `pow` is extremely naive so if you call a `pow` method on some type, this will be converted to `checked_pow` even if that makes no sense for that type.
+
+## History
+
+This is a modified version of `overflow` from https://github.com/rylev/overflow/ originally by Ryan Levick.
+See LICENSE.
